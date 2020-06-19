@@ -84,6 +84,8 @@ namespace Com.Mindstyler.Additional
         /// Checks if all fields with 'SetInEditor' attribute on the isntancees are really set in the editor.
         /// </summary>
         /// <returns>True if all fields are set, false if any field is not set.</returns>
+        [MenuItem("Custom/CheckEditorFields")]
+        [InitializeOnEnterPlayMode]
         public static bool CheckEditorFieldsLinq()
         {
             bool passed = true;
