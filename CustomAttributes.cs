@@ -7,7 +7,6 @@ using System.Reflection;
 using System;
 using System.Linq;
 using UnityEditor;
-using System.Runtime;
 
 namespace Com.Mindstyler.Additional
 {
@@ -54,12 +53,12 @@ namespace Com.Mindstyler.Additional
                 if (instances != null) //Unityobject null check
                 {
                     //check every field with the attribute for every instance if there are null values
-                    foreach (FieldInfo info in type.GetFields().Where(field => field.GetCustomAttributes<SetInEditorAttribute>(true).Any()).ToArray())
+                    foreach (FieldInfo info in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static).Where(field => field.GetCustomAttributes<SetInEditorAttribute>(true).Any()).ToArray())
                     {
                         //TODO write applicable types check as a seperate roslyn analyzer
-                        
+
                         //Get all types that are not displayed in editor and throw error because attribute is not needed and should not be used
-                        if (!info.IsPublic && info.GetCustomAttributes<SerializableAttribute>() is null)
+                        if ((!info.IsPublic && !info.GetCustomAttributes<SerializableAttribute>().Any()) || info.IsStatic)
                         {
                             Debug.LogError($"You can only set 'SetInEditor' Attribute on public or serialized fields and properties. Error on {info.Name}");
                             continue;
