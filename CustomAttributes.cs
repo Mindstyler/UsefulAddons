@@ -50,92 +50,94 @@ namespace Com.Mindstyler.Additional
                 //find all scene references of those classes
                 UnityEngine.Object[] instances = UnityEngine.Object.FindObjectsOfType(type);
 
-                if (instances != null) //Unityobject null check
+                if (instances.Length == 0)
                 {
-                    //check every field with the attribute for every instance if there are null values
-                    foreach (FieldInfo info in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static).Where(field => field.GetCustomAttributes<SetInEditorAttribute>(true).Any()).ToArray())
+                    continue;
+                }
+                
+                //check every field with the attribute for every instance if there are null values
+                foreach (FieldInfo info in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static).Where(field => field.GetCustomAttributes<SetInEditorAttribute>(true).Any()).ToArray())
+                {
+                    //TODO write applicable types check as a seperate roslyn analyzer
+                    
+                    //Get all types that are not displayed in editor and throw error because attribute is not needed and should not be used
+                    if ((!info.IsPublic && !info.GetCustomAttributes<SerializableAttribute>().Any()) || info.IsStatic)
                     {
-                        //TODO write applicable types check as a seperate roslyn analyzer
-
-                        //Get all types that are not displayed in editor and throw error because attribute is not needed and should not be used
-                        if ((!info.IsPublic && !info.GetCustomAttributes<SerializableAttribute>().Any()) || info.IsStatic)
+                        Debug.LogError($"You can only set 'SetInEditor' Attribute on public or serialized fields and properties. Error on {info.Name}");
+                        continue;
+                    }
+                    
+                    //filter all fields that are not unity objects and throw error for wrong attribute use
+                    if (!info.FieldType.IsSubclassOf(typeof(UnityEngine.Object)))
+                    {
+                        //make exception for standard serialized list for unity editor
+                        if (info.FieldType.IsGenericType && (info.FieldType.GetGenericTypeDefinition() == typeof(List<>)))
                         {
-                            Debug.LogError($"You can only set 'SetInEditor' Attribute on public or serialized fields and properties. Error on {info.Name}");
+                            //but only if the generic type of the list is a Unity.Object
+                            if (!info.FieldType.GetGenericArguments()[0].IsSubclassOf(typeof(UnityEngine.Object)))
+                            {
+                                Debug.LogError("You cannot add this attribute to a list with items not deriving from UnityEngine.Object");
+                                continue;
+                            }
+
+                            foreach (UnityEngine.Object instance in instances)
+                            {
+                                IEnumerable obj = (IEnumerable)info.GetValue(instance);
+
+                                foreach (object item in obj)
+                                {
+                                    if (item is null || (UnityEngine.Object)item == null)
+                                    {
+                                        passed = false;
+                                        Debug.LogError($"The field <color=#3293a8>'{info.Name}'</color> of gameobject <color=#32a873>'{((MonoBehaviour)instance).gameObject}'</color> has to be set in the editor!");
+                                    }
+                                }
+                            }
+
                             continue;
                         }
-                        
-                        //filter all fields that are not unity objects and throw error for wrong attribute use
-                        if (!info.FieldType.IsSubclassOf(typeof(UnityEngine.Object)))
+                        //make exception for standard array for unity editor
+                        else if (info.FieldType.IsSubclassOf(typeof(Array)))
                         {
-                            //make exception for standard serialized list for unity editor
-                            if (info.FieldType.IsGenericType && (info.FieldType.GetGenericTypeDefinition() == typeof(List<>)))
+                            //but only if the type stored in the array derives from Unity.Object
+                            if (!info.FieldType.GetElementType().IsSubclassOf(typeof(UnityEngine.Object)))
                             {
-                                //but only if the generic type of the list is a Unity.Object
-                                if (!info.FieldType.GetGenericArguments()[0].IsSubclassOf(typeof(UnityEngine.Object)))
-                                {
-                                    Debug.LogError("You cannot add this attribute to a list with items not deriving from UnityEngine.Object");
-                                    continue;
-                                }
+                                Debug.LogError($"Cannot add 'SetInEditor' Attribute on list or array with elements not deriving from 'UnityEngine.Object'");
+                                continue;
+                            }
 
-                                foreach (UnityEngine.Object instance in instances)
-                                {
-                                    IEnumerable obj = (IEnumerable)info.GetValue(instance);
+                            foreach (UnityEngine.Object instance in instances)
+                            {
+                                object[] obj = (object[])info.GetValue(instance);
 
-                                    foreach (object item in obj)
+                                foreach (object item in obj)
+                                {
+                                    if (item is null || (UnityEngine.Object)item == null)
                                     {
-                                        if (item is null || (UnityEngine.Object)item == null)
-                                        {
-                                            passed = false;
-                                            Debug.LogError($"The field <color=#3293a8>'{info.Name}'</color> of gameobject <color=#32a873>'{((MonoBehaviour)instance).gameObject}'</color> has to be set in the editor!");
-                                        }
+                                        passed = false;
+                                        Debug.LogError($"The field <color=#3293a8>'{info.Name}'</color> of gameobject <color=#32a873>'{((MonoBehaviour)instance).gameObject}'</color> has to be set in the editor!");
                                     }
                                 }
-
-                                continue;
                             }
-                            //make exception for standard array for unity editor
-                            else if (info.FieldType.IsSubclassOf(typeof(Array)))
-                            {
-                                //but only if the type stored in the array derives from Unity.Object
-                                if (!info.FieldType.GetElementType().IsSubclassOf(typeof(UnityEngine.Object)))
-                                {
-                                    Debug.LogError($"Cannot add 'SetInEditor' Attribute on list or array with elements not deriving from 'UnityEngine.Object'");
-                                    continue;
-                                }
 
-                                foreach (UnityEngine.Object instance in instances)
-                                {
-                                    object[] obj = (object[])info.GetValue(instance);
-
-                                    foreach (object item in obj)
-                                    {
-                                        if (item is null || (UnityEngine.Object)item == null)
-                                        {
-                                            passed = false;
-                                            Debug.LogError($"The field <color=#3293a8>'{info.Name}'</color> of gameobject <color=#32a873>'{((MonoBehaviour)instance).gameObject}'</color> has to be set in the editor!");
-                                        }
-                                    }
-                                }
-
-                                continue;
-                            }
-                            //throw error for wrong attribute use
-                            else
-                            {
-                                Debug.LogError($"You can only set 'SetInEditor' Attribute on types derived from 'UnityEngine.Object.' Error on: {info.Name}");
-                                continue;
-                            }
+                            continue;
                         }
-
-                        foreach (UnityEngine.Object instance in instances)
+                        //throw error for wrong attribute use
+                        else
                         {
-                            object obj = info.GetValue(instance);
+                            Debug.LogError($"You can only set 'SetInEditor' Attribute on types derived from 'UnityEngine.Object.' Error on: {info.Name}");
+                            continue;
+                        }
+                    }
 
-                            if (obj is null || (UnityEngine.Object)obj == null)
-                            {
-                                passed = false;
-                                Debug.LogError($"The field <color=#3293a8>'{info.Name}'</color> of gameobject <color=#32a873>'{((MonoBehaviour)instance).gameObject}'</color> has to be set in the editor!");
-                            }
+                    foreach (UnityEngine.Object instance in instances)
+                    {
+                        object obj = info.GetValue(instance);
+
+                        if (obj is null || (UnityEngine.Object)obj == null)
+                        {
+                            passed = false;
+                            Debug.LogError($"The field <color=#3293a8>'{info.Name}'</color> of gameobject <color=#32a873>'{((MonoBehaviour)instance).gameObject}'</color> has to be set in the editor!");
                         }
                     }
                 }
