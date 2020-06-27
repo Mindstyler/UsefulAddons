@@ -8,15 +8,15 @@ using System;
 using System.Linq;
 using UnityEditor;
 
-namespace Com.Mindstyler.Additional
+namespace Com.Mindstyler.Additional 
 {
-    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, Inherited = true, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, Inherited = false, AllowMultiple = false)]
     internal sealed class ListAllAttribute : Attribute
     {
 
     }
 
-    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, Inherited = true, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, Inherited = false, AllowMultiple = false)]
     internal sealed class SetInEditorAttribute : Attribute
     {
 
@@ -38,6 +38,10 @@ namespace Com.Mindstyler.Additional
             return typeof(T).GetFields(/*BindingFlags.Public | BindingFlags.NonPublic*/).Where(field => field.GetCustomAttributes<ListAllAttribute>(true).Any()).Where(field => field.FieldType.Name.Equals(typeof(U).Name)).ToArray();
         }
 
+        /// <summary>
+        /// Checks if all fields with 'SetInEditor' attribute on the isntancees are really set in the editor.
+        /// </summary>
+        /// <returns>True if all fields are set, false if any field is not set.</returns>
         [MenuItem("Custom/CheckEditor")]
         [InitializeOnEnterPlayMode]
         public static bool CheckEditorFields()
@@ -45,7 +49,7 @@ namespace Com.Mindstyler.Additional
             bool passed = true;
 
             //get all classes of assembly where there are 'SetInEditor' attributes
-            foreach (Type type in Assembly.GetExecutingAssembly().GetTypes().Where(type => type.GetFields().Where(field => field.GetCustomAttributes<SetInEditorAttribute>(true).Any()).Any()))
+            foreach (Type type in Assembly.GetExecutingAssembly().GetTypes().Where(type => type.GetFields().Any(field => field.GetCustomAttributes<SetInEditorAttribute>().Any())))
             {
                 //find all scene references of those classes
                 UnityEngine.Object[] instances = UnityEngine.Object.FindObjectsOfType(type);
@@ -56,7 +60,7 @@ namespace Com.Mindstyler.Additional
                 }
                 
                 //check every field with the attribute for every instance if there are null values
-                foreach (FieldInfo info in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static).Where(field => field.GetCustomAttributes<SetInEditorAttribute>(true).Any()).ToArray())
+                foreach (FieldInfo info in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static).Where(field => field.GetCustomAttributes<SetInEditorAttribute>().Any()))
                 {
                     //TODO write applicable types check as a seperate roslyn analyzer
                     
@@ -68,13 +72,13 @@ namespace Com.Mindstyler.Additional
                     }
                     
                     //filter all fields that are not unity objects and throw error for wrong attribute use
-                    if (!info.FieldType.IsSubclassOf(typeof(UnityEngine.Object)))
+                    if (!info.FieldType.IsSubclassOf(typeof(UnityEngine.Object)) && !(info.FieldType == typeof(UnityEngine.Object)))
                     {
                         //make exception for standard serialized list for unity editor
                         if (info.FieldType.IsGenericType && (info.FieldType.GetGenericTypeDefinition() == typeof(List<>)))
                         {
                             //but only if the generic type of the list is a Unity.Object
-                            if (!info.FieldType.GetGenericArguments()[0].IsSubclassOf(typeof(UnityEngine.Object)))
+                            if (!info.FieldType.GetGenericArguments()[0].IsSubclassOf(typeof(UnityEngine.Object)) && !(info.FieldType.GetGenericArguments()[0] == typeof(UnityEngine.Object)))
                             {
                                 Debug.LogError("You cannot add this attribute to a list with items not deriving from UnityEngine.Object");
                                 continue;
@@ -82,9 +86,7 @@ namespace Com.Mindstyler.Additional
 
                             foreach (UnityEngine.Object instance in instances)
                             {
-                                IEnumerable obj = (IEnumerable)info.GetValue(instance);
-
-                                foreach (object item in obj)
+                                foreach (object item in (IEnumerable)info.GetValue(instance))
                                 {
                                     if (item is null || (UnityEngine.Object)item == null)
                                     {
@@ -100,7 +102,7 @@ namespace Com.Mindstyler.Additional
                         else if (info.FieldType.IsSubclassOf(typeof(Array)))
                         {
                             //but only if the type stored in the array derives from Unity.Object
-                            if (!info.FieldType.GetElementType().IsSubclassOf(typeof(UnityEngine.Object)))
+                            if (!info.FieldType.GetElementType().IsSubclassOf(typeof(UnityEngine.Object)) && !(info.FieldType.GetElementType() == typeof(UnityEngine.Object)))
                             {
                                 Debug.LogError($"Cannot add 'SetInEditor' Attribute on list or array with elements not deriving from 'UnityEngine.Object'");
                                 continue;
@@ -108,9 +110,7 @@ namespace Com.Mindstyler.Additional
 
                             foreach (UnityEngine.Object instance in instances)
                             {
-                                object[] obj = (object[])info.GetValue(instance);
-
-                                foreach (object item in obj)
+                                foreach (object item in (IEnumerable)info.GetValue(instance))
                                 {
                                     if (item is null || (UnityEngine.Object)item == null)
                                     {
@@ -150,43 +150,6 @@ namespace Com.Mindstyler.Additional
             else
             {
                 //EditorApplication.isPlaying = false;
-            }
-
-            return passed;
-        }
-
-
-        /// <summary>
-        /// Checks if all fields with 'SetInEditor' attribute on the isntancees are really set in the editor.
-        /// </summary>
-        /// <returns>True if all fields are set, false if any field is not set.</returns>
-        [MenuItem("Custom/CheckEditorFields")]
-        //[InitializeOnEnterPlayMode]
-        public static bool CheckEditorFieldsLinq()
-        {
-            bool passed = true;
-
-            foreach ((FieldInfo info, UnityEngine.Object instance) in
-                from Type type in Assembly.GetExecutingAssembly().GetTypes().Where(type => type.GetFields().Where(field => field.GetCustomAttributes<SetInEditorAttribute>(true).Any()).Any())
-                let instances = UnityEngine.Object.FindObjectsOfType(type)
-                where instances != null
-                from FieldInfo info in type.GetFields().Where(field => field.GetCustomAttributes<SetInEditorAttribute>(true).Any()).ToArray()
-                from UnityEngine.Object instance in instances
-                let obj = info.GetValue(instance)
-                where obj is null || (UnityEngine.Object)obj == null
-                select (info, instance))
-            {
-                passed = false;
-                Debug.LogError($"The field <color=#3293a8>'{info.Name}'</color> of gameobject <color=#32a873>'{((MonoBehaviour)instance).gameObject}'</color> has to be set in the editor!");
-            }
-
-            if (passed)
-            {
-                Debug.Log("<color=green>Success.</color> All editor fields are set.");
-            }
-            else
-            {
-                EditorApplication.isPlaying = false;
             }
 
             return passed;
